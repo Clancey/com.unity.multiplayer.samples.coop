@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Unity.BossRoom.Gameplay.Actions;
 using Unity.BossRoom.Gameplay.Configuration;
 using Unity.BossRoom.Gameplay.GameplayObjects;
@@ -95,6 +96,8 @@ namespace Unity.BossRoom.Gameplay.UserInput
         BaseActionInput m_CurrentSkillInput;
 
         bool m_MoveRequest;
+        bool g_MoveRequest;
+        Vector3 g_MoveRequestPosition;
 
         Camera m_MainCamera;
 
@@ -109,10 +112,13 @@ namespace Unity.BossRoom.Gameplay.UserInput
         PhysicsWrapper m_PhysicsWrapper;
 
         public ActionState actionState1 { get; private set; }
+        ActionState ActionState1() => actionState1;
 
         public ActionState actionState2 { get; private set; }
+        public ActionState ActionState2() => actionState2;
 
         public ActionState actionState3 { get; private set; }
+        public ActionState ActionState3() => actionState3;
 
         public System.Action action1ModifiedCallback;
 
@@ -121,6 +127,11 @@ namespace Unity.BossRoom.Gameplay.UserInput
         void Awake()
         {
             m_MainCamera = Camera.main;
+            m_KeyCodeToActionID = new (){
+                [(KeyCode.Alpha1,"Fire1")] = () => actionState1,
+                [(KeyCode.Alpha2,"Fire2")] = ()=> actionState2,
+                [(KeyCode.Alpha3,"Fire3")] = ()=> actionState3,
+            };
         }
 
         public override void OnNetworkSpawn()
@@ -241,6 +252,20 @@ namespace Unity.BossRoom.Gameplay.UserInput
 
             m_ActionRequestCount = 0;
 
+            if(g_MoveRequest){
+                g_MoveRequest = false;
+                // verify point is indeed on navmesh surface
+                if (NavMesh.SamplePosition(g_MoveRequestPosition,
+                        out var hit,
+                        k_MaxNavMeshDistance,
+                        NavMesh.AllAreas))
+                {
+                    m_ServerCharacter.SendCharacterInputServerRpc(hit.position);
+
+                    //Send our client only click request
+                    ClientMoveEvent?.Invoke(hit.position);
+                }
+            }
             if (EventSystem.current.currentSelectedGameObject != null)
             {
                 return;
@@ -470,32 +495,31 @@ namespace Unity.BossRoom.Gameplay.UserInput
                 m_ActionRequestCount++;
             }
         }
-
+        Dictionary<(KeyCode,string), Func<ActionState>> m_KeyCodeToActionID = new();
         void Update()
         {
-            if (Input.GetKeyDown(KeyCode.Alpha1))
+            foreach(var kvp in m_KeyCodeToActionID)
             {
-                RequestAction(actionState1.actionID, SkillTriggerStyle.Keyboard);
-            }
-            else if (Input.GetKeyUp(KeyCode.Alpha1))
-            {
-                RequestAction(actionState1.actionID, SkillTriggerStyle.KeyboardRelease);
-            }
-            if (Input.GetKeyDown(KeyCode.Alpha2))
-            {
-                RequestAction(actionState2.actionID, SkillTriggerStyle.Keyboard);
-            }
-            else if (Input.GetKeyUp(KeyCode.Alpha2))
-            {
-                RequestAction(actionState2.actionID, SkillTriggerStyle.KeyboardRelease);
-            }
-            if (Input.GetKeyDown(KeyCode.Alpha3))
-            {
-                RequestAction(actionState3.actionID, SkillTriggerStyle.Keyboard);
-            }
-            else if (Input.GetKeyUp(KeyCode.Alpha3))
-            {
-                RequestAction(actionState3.actionID, SkillTriggerStyle.KeyboardRelease);
+                var actionState = kvp.Value;
+                var key = kvp.Key.Item1;
+                var button = kvp.Key.Item2;
+                var actionId = actionState().actionID;
+                if (Input.GetKeyDown(key))
+                {
+                    RequestAction(actionId, SkillTriggerStyle.Keyboard);
+                }
+                else if (Input.GetKeyUp(key))
+                {
+                    RequestAction(actionId, SkillTriggerStyle.KeyboardRelease);
+                }
+                if (Input.GetButtonDown(button))
+                {
+                    RequestAction(actionId, SkillTriggerStyle.Keyboard);
+                }
+                else if (Input.GetButtonUp(button))
+                {
+                    RequestAction(actionId, SkillTriggerStyle.KeyboardRelease);
+                }
             }
 
             if (Input.GetKeyDown(KeyCode.Alpha5))
@@ -533,6 +557,13 @@ namespace Unity.BossRoom.Gameplay.UserInput
                 {
                     m_MoveRequest = true;
                 }
+            }
+            float vAmount = Input.GetAxis ("Vertical");
+            float hAmount = Input.GetAxis ("Horizontal");
+            if(vAmount != 0 || hAmount != 0)
+            {
+                g_MoveRequest = true;
+                g_MoveRequestPosition = this.transform.position + (new Vector3(hAmount, 0, vAmount) * 1);
             }
         }
 
