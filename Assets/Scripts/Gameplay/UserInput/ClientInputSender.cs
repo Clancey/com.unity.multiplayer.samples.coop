@@ -501,9 +501,14 @@ namespace Unity.BossRoom.Gameplay.UserInput
             foreach(var kvp in m_KeyCodeToActionID)
             {
                 var actionState = kvp.Value;
+                if (actionState == null)
+                    continue;
                 var key = kvp.Key.Item1;
                 var button = kvp.Key.Item2;
-                var actionId = actionState().actionID;
+                var a = actionState();
+                if (a == null)
+                    continue;
+                var actionId = a.actionID;
                 if (Input.GetKeyDown(key))
                 {
                     RequestAction(actionId, SkillTriggerStyle.Keyboard);
